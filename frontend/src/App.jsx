@@ -3,6 +3,10 @@ import { AuthProvider } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
+import GitHubSync from './pages/GitHubSync';
+import CareerReadiness from './pages/CareerReadiness';
+import MockInterview from './pages/MockInterview';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function Home() {
@@ -58,6 +62,38 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/github" 
+            element={
+              <ProtectedRoute>
+                <GitHubSync />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/career" 
+            element={
+              <ProtectedRoute>
+                <CareerReadiness />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/interview" 
+            element={
+              <ProtectedRoute>
+                <MockInterview />
               </ProtectedRoute>
             } 
           />

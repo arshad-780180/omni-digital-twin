@@ -1,6 +1,6 @@
 import { useAuth } from '../context/AuthContext';
 import { LogOut, User as UserIcon } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -38,24 +38,30 @@ export default function Dashboard() {
           <p className="text-slate-400 mt-2">Welcome to your Digital Twin command center.</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Placeholder Cards for Future Phases */}
           <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 backdrop-blur-sm">
             <h3 className="text-lg font-semibold mb-2">Resume Intelligence</h3>
             <p className="text-sm text-slate-400 mb-4">Upload your resume to extract skills and experience.</p>
-            <button className="text-blue-400 text-sm font-medium hover:text-blue-300">Go to Profile &rarr;</button>
+            <Link to="/profile" className="inline-block text-blue-400 text-sm font-medium hover:text-blue-300">Go to Profile &rarr;</Link>
           </div>
 
           <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 backdrop-blur-sm">
             <h3 className="text-lg font-semibold mb-2">GitHub Sync</h3>
             <p className="text-sm text-slate-400 mb-4">Connect your GitHub to analyze your coding style.</p>
-            <button className="text-blue-400 text-sm font-medium hover:text-blue-300">Connect &rarr;</button>
+            <Link to="/github" className="inline-block text-blue-400 text-sm font-medium hover:text-blue-300">Connect &rarr;</Link>
           </div>
 
           <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 backdrop-blur-sm">
             <h3 className="text-lg font-semibold mb-2">Career Readiness</h3>
             <p className="text-sm text-slate-400 mb-4">Compare your digital twin against job descriptions.</p>
-            <button className="text-blue-400 text-sm font-medium hover:text-blue-300">Analyze &rarr;</button>
+            <Link to="/career" className="inline-block text-blue-400 text-sm font-medium hover:text-blue-300">Analyze &rarr;</Link>
+          </div>
+
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 backdrop-blur-sm">
+            <h3 className="text-lg font-semibold mb-2">Mock Interview</h3>
+            <p className="text-sm text-slate-400 mb-4">Practice AI-generated technical interview questions.</p>
+            <Link to="/interview" className="inline-block text-blue-400 text-sm font-medium hover:text-blue-300">Start Interview &rarr;</Link>
           </div>
         </div>
       </main>

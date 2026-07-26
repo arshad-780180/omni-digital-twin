@@ -6,9 +6,9 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Annotated
 from datetime import datetime, timedelta
 
-from ..database.connection import get_db
-from ..models.user import UserCreate, UserLogin, UserResponse, Token, TokenData, UserInDB
-from ..utils.security import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
+from database.connection import get_db
+from models.user import UserCreate, UserLogin, UserResponse, Token, TokenData, UserInDB
+from utils.security import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
