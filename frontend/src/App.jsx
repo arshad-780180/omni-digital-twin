@@ -7,6 +7,11 @@ import Profile from './pages/Profile';
 import GitHubSync from './pages/GitHubSync';
 import CareerReadiness from './pages/CareerReadiness';
 import MockInterview from './pages/MockInterview';
+import ATSOptimizer from './pages/ATSOptimizer';
+import JobMatch from './pages/JobMatch';
+import DigitalTwin from './pages/DigitalTwin';
+import LearningRoadmap from './pages/LearningRoadmap';
+import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function Home() {
@@ -94,6 +99,46 @@ function App() {
             element={
               <ProtectedRoute>
                 <MockInterview />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/ats" 
+            element={
+              <ProtectedRoute>
+                <ATSOptimizer />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/job-match" 
+            element={
+              <ProtectedRoute>
+                <JobMatch />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/digital-twin" 
+            element={
+              <ProtectedRoute>
+                <DigitalTwin />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/learning" 
+            element={
+              <ProtectedRoute>
+                <LearningRoadmap />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/analytics" 
+            element={
+              <ProtectedRoute>
+                <AnalyticsDashboard />
               </ProtectedRoute>
             } 
           />

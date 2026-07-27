@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.career import (
     CareerScoreBreakdown,
@@ -8,112 +8,123 @@ from models.career import (
     WeaknessItem,
     MissingSkillItem,
     RecommendedRole,
-    CareerSummary,
     CareerAnalysis,
-    CareerAnalyzeResponse,
+    CareerAnalyzeResponse
 )
 from services.career_service import CareerService
 from services.career_ai_service import CareerAIService
 
 
 def test_pydantic_career_schemas():
-    """1. Test Pydantic validation for all Phase 3 Career Readiness schemas."""
+    """1. Test validation of career Pydantic schemas (CareerScoreBreakdown, items, response)."""
     breakdown = CareerScoreBreakdown(
-        technical_score=90,
-        resume_score=85,
-        github_score=88,
-        project_score=80,
-        communication_score=75
+        technical_score=85,
+        resume_score=80,
+        github_score=90,
+        project_score=75,
+        communication_score=85
     )
-    assert breakdown.technical_score == 90
-    assert breakdown.communication_score == 75
+    assert breakdown.technical_score == 85
+    assert breakdown.github_score == 90
 
-    analysis = CareerAnalysis(
-        overall_score=86,
-        breakdown=breakdown,
-        career_level="Placement Ready",
-        strengths=["Python", "FastAPI"],
-        weaknesses=["Docker"],
-        missing_skills=["Kubernetes"],
-        recommended_roles=["Backend Developer"],
-        summary="Candidate is well prepared."
-    )
-    assert analysis.overall_score == 86
-    assert analysis.career_level == "Placement Ready"
-    assert "Python" in analysis.strengths
+    strength = StrengthItem(title="Python Specialist", description="Strong expertise in Python", category="Technical")
+    assert strength.category == "Technical"
+
+    weakness = WeaknessItem(title="No Cloud Certs", description="Missing AWS/GCP certifications", impact="Medium", recommendation="Get AWS certified")
+    assert weakness.impact == "Medium"
+
+    missing = MissingSkillItem(skill="Docker", reason="Required for modern DevOps", priority="High")
+    assert missing.priority == "High"
+
+    role = RecommendedRole(role="Senior Backend Engineer", match_percentage=88, reason="Strong Python and API skills")
+    assert role.match_percentage == 88
 
 
 @pytest.mark.asyncio
 async def test_load_user_context_success():
-    """2. Test loading merged user context from db.resumes, db.github_analysis, and db.profiles."""
+    """2. Test automatic loading of Resume, GitHub analysis, and User Profile from MongoDB."""
     mock_db = MagicMock()
 
-    mock_cursor_res = MagicMock()
-    mock_cursor_res.sort.return_value = mock_cursor_res
-    mock_cursor_res.limit.return_value = mock_cursor_res
-    mock_cursor_res.to_list = AsyncMock(return_value=[{"parsed_data": {"name": "Alice", "skills": ["Python"]}}])
-    mock_db.resumes.find.return_value = mock_cursor_res
+    # Mock resume cursor
+    mock_res_cursor = MagicMock()
+    mock_res_cursor.sort.return_value = mock_res_cursor
+    mock_res_cursor.limit.return_value = mock_res_cursor
+    mock_res_cursor.to_list = AsyncMock(return_value=[{"_id": "res_123", "skills": ["Python"]}])
+    mock_db.resumes.find.return_value = mock_res_cursor
 
-    mock_cursor_gh = MagicMock()
-    mock_cursor_gh.sort.return_value = mock_cursor_gh
-    mock_cursor_gh.limit.return_value = mock_cursor_gh
-    mock_cursor_gh.to_list = AsyncMock(return_value=[{"analysis": {"github_score": 85}}])
-    mock_db.github_analysis.find.return_value = mock_cursor_gh
+    # Mock github cursor
+    mock_gh_cursor = MagicMock()
+    mock_gh_cursor.sort.return_value = mock_gh_cursor
+    mock_gh_cursor.limit.return_value = mock_gh_cursor
+    mock_gh_cursor.to_list = AsyncMock(return_value=[{"_id": "gh_123", "developer_level": "Senior"}])
+    mock_db.github_analysis.find.return_value = mock_gh_cursor
 
-    mock_db.profiles.find_one = AsyncMock(return_value={"user_id": "u1", "skills": ["SQL", "FastAPI"]})
+    # Mock profile
+    mock_db.profiles.find_one = AsyncMock(return_value={"user_id": "user_1", "skills": ["FastAPI"]})
 
-    res_doc, gh_doc, prof_doc = await CareerService.load_user_context("u1", mock_db)
-    assert res_doc is not None
-    assert gh_doc is not None
-    assert prof_doc is not None
-    assert res_doc["parsed_data"]["name"] == "Alice"
-    assert gh_doc["analysis"]["github_score"] == 85
+    resume_doc, gh_doc, prof_doc = await CareerService.load_user_context("user_1", mock_db)
+
+    assert resume_doc["_id"] == "res_123"
+    assert gh_doc["_id"] == "gh_123"
+    assert prof_doc["user_id"] == "user_1"
+    assert mock_db.resumes.find.called
+    assert mock_db.github_analysis.find.called
+    assert mock_db.profiles.find_one.called
 
 
 @pytest.mark.asyncio
 async def test_load_user_context_empty():
-    """3. Test loading context when database collections have no entries for user."""
+    """3. Test loading context when user has no uploaded resume, github analysis, or profile."""
     mock_db = MagicMock()
 
-    mock_cursor_res = MagicMock()
-    mock_cursor_res.sort.return_value = mock_cursor_res
-    mock_cursor_res.limit.return_value = mock_cursor_res
-    mock_cursor_res.to_list = AsyncMock(return_value=[])
-    mock_db.resumes.find.return_value = mock_cursor_res
+    mock_res_cursor = MagicMock()
+    mock_res_cursor.sort.return_value = mock_res_cursor
+    mock_res_cursor.limit.return_value = mock_res_cursor
+    mock_res_cursor.to_list = AsyncMock(return_value=[])
+    mock_db.resumes.find.return_value = mock_res_cursor
 
-    mock_cursor_gh = MagicMock()
-    mock_cursor_gh.sort.return_value = mock_cursor_gh
-    mock_cursor_gh.limit.return_value = mock_cursor_gh
-    mock_cursor_gh.to_list = AsyncMock(return_value=[])
-    mock_db.github_analysis.find.return_value = mock_cursor_gh
+    mock_gh_cursor = MagicMock()
+    mock_gh_cursor.sort.return_value = mock_gh_cursor
+    mock_gh_cursor.limit.return_value = mock_gh_cursor
+    mock_gh_cursor.to_list = AsyncMock(return_value=[])
+    mock_db.github_analysis.find.return_value = mock_gh_cursor
     mock_db.github_data.find_one = AsyncMock(return_value=None)
+
     mock_db.profiles.find_one = AsyncMock(return_value=None)
 
-    res_doc, gh_doc, prof_doc = await CareerService.load_user_context("u_empty", mock_db)
-    assert res_doc is None
+    resume_doc, gh_doc, prof_doc = await CareerService.load_user_context("user_empty", mock_db)
+    assert resume_doc is None
     assert gh_doc is None
     assert prof_doc is None
 
 
 @pytest.mark.asyncio
 async def test_ai_success():
-    """4. Test successful Gemini AI career readiness analysis."""
+    """4. Test successful Gemini AI career analysis generating valid structured report."""
     fake_llm_json = """
     {
-      "overall_score": 88,
+      "career_score": 88,
       "breakdown": {
-        "technical_score": 92,
+        "technical_score": 90,
         "resume_score": 85,
-        "github_score": 90,
+        "github_score": 88,
         "project_score": 85,
-        "communication_score": 80
+        "communication_score": 90
       },
-      "career_level": "Placement Ready",
-      "strengths": ["Python", "FastAPI", "Machine Learning"],
-      "weaknesses": ["Kubernetes", "AWS"],
-      "missing_skills": ["Kubernetes", "AWS"],
-      "recommended_roles": ["Backend Developer", "AI Engineer"],
-      "summary": "Excellent technical profile ready for placement."
+      "career_level": "Senior Developer",
+      "strengths": [
+        {"title": "Python Expert", "description": "Extensive backend Python usage", "category": "Technical"}
+      ],
+      "weaknesses": [
+        {"title": "No Kubernetes", "description": "Lacks container orchestration", "impact": "Medium", "recommendation": "Deploy a K8s cluster"}
+      ],
+      "missing_skills": [
+        {"skill": "Kubernetes", "reason": "Cloud scalability", "priority": "High"}
+      ],
+      "recommended_roles": [
+        {"role": "Senior Backend Developer", "match_percentage": 92, "reason": "Matches 90% of skills"}
+      ],
+      "summary": "An exceptional backend developer ready for senior leadership roles."
     }
     """
 
@@ -338,7 +349,7 @@ async def test_latest_report_endpoint():
         "recommended_roles": ["AI Engineer"],
         "summary": "Top engineer.",
         "analysis_method": "ai",
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
 
     mock_cursor = MagicMock()

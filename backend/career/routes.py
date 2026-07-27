@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Union
 import re
 
@@ -13,25 +13,25 @@ from models.career import (
 )
 from auth.routes import get_current_user
 from services.career_service import CareerService
+from utils.logger import get_logger
 
+logger = get_logger("career.routes")
 router = APIRouter(prefix="/career", tags=["career"])
-
 
 # =========================================================
 # Phase 3: AI Career Readiness Engine Endpoints
 # =========================================================
-@router.post("/analyze", response_model=Union[CareerAnalyzeResponse, CareerReportResponse])
+@router.post(
+    "/analyze",
+    response_model=Union[CareerAnalyzeResponse, CareerReportResponse],
+    summary="Analyze career readiness or job match",
+    description="Unified endpoint: without body runs Phase 3 AI Career Readiness Engine; with job_title and job_description runs legacy ATS job match."
+)
 async def analyze_career(
     request: Optional[JobAnalyzeRequest] = None,
     current_user: UserInDB = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """
-    Unified analyze endpoint:
-    - If called without arguments or empty body, runs Phase 3 AI Career Readiness Engine
-      (automatically reading db.resumes, db.github_analysis, and db.profiles).
-    - If called with job_title and job_description, performs legacy ATS job match analysis.
-    """
     if request and request.job_title and request.job_description:
         return await _legacy_analyze_job_match(request, current_user, db)
 
@@ -44,15 +44,16 @@ async def analyze_career(
             detail=f"Failed to generate AI career readiness report: {str(e)}"
         )
 
-
-@router.get("/latest", response_model=CareerAnalyzeResponse)
+@router.get(
+    "/latest",
+    response_model=CareerAnalyzeResponse,
+    summary="Get latest AI Career Readiness report",
+    description="Returns the most recent AI Career Readiness evaluation for the current user."
+)
 async def get_latest_career_report(
     current_user: UserInDB = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """
-    Returns the most recent AI Career Readiness report for the user.
-    """
     report = await CareerService.get_latest_career_report(current_user.id, db)
     if not report:
         raise HTTPException(
@@ -61,18 +62,18 @@ async def get_latest_career_report(
         )
     return report
 
-
-@router.get("/history", response_model=List[CareerAnalyzeResponse])
+@router.get(
+    "/history",
+    response_model=List[CareerAnalyzeResponse],
+    summary="Get career readiness history",
+    description="Returns previous AI Career Readiness evaluations sorted by newest first."
+)
 async def get_career_history(
     current_user: UserInDB = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """
-    Returns previous career readiness analyses sorted by newest first.
-    """
     reports = await CareerService.get_career_history(current_user.id, db)
     return reports
-
 
 # =========================================================
 # Legacy ATS Job-Match Support (Backward Compatibility)
@@ -141,7 +142,7 @@ async def _legacy_analyze_job_match(
         "match_score": match_score,
         "matched_skills": matched_skills,
         "missing_skills": missing_skills,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(timezone.utc)
     }
     
     result = await db.career_reports.insert_one(report_doc)
@@ -149,8 +150,12 @@ async def _legacy_analyze_job_match(
     
     return CareerReportResponse(**report_doc)
 
-
-@router.post("/job-match", response_model=CareerReportResponse)
+@router.post(
+    "/job-match",
+    response_model=CareerReportResponse,
+    summary="Legacy job match analysis",
+    description="Performs keyword-based ATS job match evaluation against user profile skills."
+)
 async def legacy_job_match(
     request: JobAnalyzeRequest,
     current_user: UserInDB = Depends(get_current_user),
@@ -158,8 +163,12 @@ async def legacy_job_match(
 ):
     return await _legacy_analyze_job_match(request, current_user, db)
 
-
-@router.get("/reports", response_model=List[CareerReportResponse])
+@router.get(
+    "/reports",
+    response_model=List[CareerReportResponse],
+    summary="Get legacy job match reports",
+    description="Retrieves list of past legacy ATS job match reports."
+)
 async def get_career_reports(
     current_user: UserInDB = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)

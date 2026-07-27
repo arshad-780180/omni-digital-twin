@@ -45,7 +45,9 @@ class ParsedResumeData(BaseModel):
     certifications: List[CertificationItem] = Field(default_factory=list)
     achievements: List[AchievementItem] = Field(default_factory=list)
 
-class ResumeUploadResponse(BaseModel):
+from models.common import AIResponseBase
+
+class ResumeUploadResponse(AIResponseBase):
     message: str
     file_url: str
     extracted_skills: List[str] = Field(default_factory=list)

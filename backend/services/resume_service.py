@@ -1,7 +1,7 @@
 import os
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Tuple, Optional
 import PyPDF2
 import docx
@@ -14,107 +14,128 @@ from models.resume import (
     ExperienceItem,
     ProjectItem,
     CertificationItem,
-    AchievementItem,
+    AchievementItem
 )
 from ai.llm_provider import get_llm_provider
+from services.digital_twin_memory_service import DigitalTwinMemoryService
+from utils.logger import get_logger
+
+logger = get_logger("resume")
 
 
 class ResumeService:
     @staticmethod
-    def extract_text_from_file(file_path: str) -> str:
-        """Extracts text from a .pdf or .docx resume file."""
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+    def extract_text_pdf(file_path: str) -> str:
+        text = ""
+        try:
+            with open(file_path, "rb") as f:
+                reader = PyPDF2.PdfReader(f)
+                for page in reader.pages:
+                    content = page.extract_text()
+                    if content:
+                        text += content + "\n"
+        except Exception as e:
+            logger.error(f"Error reading PDF {file_path}: {str(e)}")
+        return text
 
-        file_lower = file_path.lower()
-        if file_lower.endswith(".pdf"):
-            text = ""
-            try:
-                with open(file_path, "rb") as pdf_file:
-                    reader = PyPDF2.PdfReader(pdf_file)
-                    for page in reader.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n"
-            except Exception as e:
-                raise ValueError(f"Failed to parse PDF: {str(e)}")
-            return text
-
-        elif file_lower.endswith(".docx"):
-            try:
-                doc = docx.Document(file_path)
-                paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-                return "\n".join(paragraphs)
-            except Exception as e:
-                raise ValueError(f"Failed to parse DOCX: {str(e)}")
-
-        else:
-            raise ValueError("Unsupported file format. Only .pdf and .docx are supported.")
+    @staticmethod
+    def extract_text_docx(file_path: str) -> str:
+        text = ""
+        try:
+            doc = docx.Document(file_path)
+            for para in doc.paragraphs:
+                if para.text:
+                    text += para.text + "\n"
+        except Exception as e:
+            logger.error(f"Error reading DOCX {file_path}: {str(e)}")
+        return text
 
     @classmethod
-    async def analyze_resume_with_ai(cls, raw_text: str) -> Tuple[ParsedResumeData, str]:
-        """
-        Analyzes raw resume text using Gemini API.
-        Returns a tuple of (ParsedResumeData, parsing_method).
-        If AI fails, gracefully falls back to regex-based parsing.
-        """
-        prompt = f"""
-You are an expert HR AI and technical recruiter. Parse the following resume text and extract structured information.
-Return strictly a valid JSON object conforming to the schema below, with no markdown code fences or extra text.
+    def extract_text_from_file(cls, file_path: str) -> str:
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == ".pdf":
+            return cls.extract_text_pdf(file_path)
+        elif ext in [".doc", ".docx"]:
+            return cls.extract_text_docx(file_path)
+        raise ValueError(f"Unsupported file format: {ext}")
 
-Schema:
+    @staticmethod
+    def fallback_regex_parse(text: str) -> ParsedResumeData:
+        data = ParsedResumeData()
+
+        # Basic Email Regex
+        email_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", text)
+        if email_match:
+            data.email = email_match.group(0)
+
+        # Basic Phone Regex
+        phone_match = re.search(r"(\+?\d{1,3}[-.\s]??\d{3}[-.\s]??\d{3}[-.\s]??\d{4}|\(\d{3}\)\s*\d{3}[-.\s]??\d{4}|\d{10})", text)
+        if phone_match:
+            data.phone = phone_match.group(0)
+
+        # LinkedIn Regex
+        linkedin_match = re.search(r"linkedin\.com/in/[a-zA-Z0-9_-]+", text, re.IGNORECASE)
+        if linkedin_match:
+            data.linkedin = "https://" + linkedin_match.group(0)
+
+        # GitHub Regex
+        github_match = re.search(r"github\.com/[a-zA-Z0-9_-]+", text, re.IGNORECASE)
+        if github_match:
+            data.github = "https://" + github_match.group(0)
+
+        # Extract Name (Heuristic: First non-empty line with <= 4 words)
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        for line in lines[:5]:
+            if len(line.split()) <= 4 and not any(char.isdigit() for char in line):
+                data.name = line
+                break
+
+        # Fallback keyword skills matching
+        tech_keywords = [
+            "python", "javascript", "typescript", "react", "node", "express", "mongodb",
+            "sql", "postgresql", "fastapi", "django", "docker", "kubernetes", "aws",
+            "git", "html", "css", "tailwind", "java", "c++", "c#", "go", "rust",
+            "machine learning", "data science", "ai", "redux", "graphql", "rest api"
+        ]
+        found_skills = set()
+        lower_text = text.lower()
+        for kw in tech_keywords:
+            if re.search(r"\b" + re.escape(kw) + r"\b", lower_text):
+                found_skills.add(kw.capitalize())
+
+        if found_skills:
+            data.skills = sorted(list(found_skills))
+
+        # Capture basic summary if available
+        for i, line in enumerate(lines):
+            if "summary" in line.lower() or "objective" in line.lower():
+                if i + 1 < len(lines):
+                    data.summary = lines[i + 1]
+                break
+
+        return data
+
+    @classmethod
+    async def analyze_resume_with_ai(cls, text: str) -> Tuple[ParsedResumeData, str]:
+        prompt = f"""
+You are an expert AI resume parser. Extract structured data from the following resume text and return ONLY a valid JSON object matching this schema:
 {{
-  "name": "Full name of the candidate or null",
-  "email": "Email address or null",
-  "phone": "Phone number or null",
-  "linkedin": "LinkedIn profile URL or username or null",
-  "github": "GitHub profile URL or username or null",
-  "education": [
-    {{
-      "degree": "Degree name",
-      "institution": "University/College name",
-      "start_date": "Start date or year",
-      "end_date": "End date or year",
-      "description": "Description or GPA"
-    }}
-  ],
-  "experience": [
-    {{
-      "role": "Job title",
-      "company": "Company name",
-      "start_date": "Start date",
-      "end_date": "End date",
-      "description": "Responsibilities and achievements",
-      "technologies": ["Tech1", "Tech2"]
-    }}
-  ],
-  "skills": ["Skill1", "Skill2", "Skill3"],
-  "projects": [
-    {{
-      "title": "Project name",
-      "description": "Description of project",
-      "technologies": ["Tech1", "Tech2"],
-      "link": "URL or null"
-    }}
-  ],
-  "certifications": [
-    {{
-      "name": "Certification name",
-      "issuer": "Issuing organization",
-      "date": "Date obtained"
-    }}
-  ],
-  "achievements": [
-    {{
-      "title": "Achievement or award title",
-      "description": "Details"
-    }}
-  ]
+  "name": str or null,
+  "email": str or null,
+  "phone": str or null,
+  "linkedin": str or null,
+  "github": str or null,
+  "education": list,
+  "experience": list,
+  "skills": list of str,
+  "projects": list,
+  "certifications": list,
+  "achievements": list
 }}
 
 Resume Text:
 ---
-{raw_text[:8000]}
+{text[:8000]}
 ---
 """
         try:
@@ -125,63 +146,21 @@ Resume Text:
             parsed_data = ParsedResumeData.model_validate(data)
             return parsed_data, "ai"
         except Exception as e:
-            print(f"[ResumeService] AI parsing failed ({str(e)}). Falling back to regex parser.")
-            fallback_data = cls.fallback_regex_parse(raw_text)
+            logger.warning(f"AI parsing failed ({str(e)}), falling back to regex: {str(e)}")
+            fallback_data = cls.fallback_regex_parse(text)
             return fallback_data, "regex_fallback"
 
-    @staticmethod
-    def fallback_regex_parse(raw_text: str) -> ParsedResumeData:
-        """
-        Fallback parser that extracts core fields via regex/keywords if AI fails.
-        """
-        # Email extraction
-        email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', raw_text)
-        email = email_match.group(0) if email_match else None
-
-        # Phone extraction
-        phone_match = re.search(r'(\+\d{1,3}[-.\s]??\d{10}|\(\d{3}\)\s*\d{3}[-.\s]??\d{4}|\d{3}[-.\s]??\d{3}[-.\s]??\d{4})', raw_text)
-        phone = phone_match.group(0) if phone_match else None
-
-        # LinkedIn extraction
-        linkedin_match = re.search(r'(https?://)?(www\.)?linkedin\.com/in/[a-zA-Z0-9_-]+', raw_text, re.IGNORECASE)
-        linkedin = linkedin_match.group(0) if linkedin_match else None
-
-        # GitHub extraction
-        github_match = re.search(r'(https?://)?(www\.)?github\.com/[a-zA-Z0-9_-]+', raw_text, re.IGNORECASE)
-        github = github_match.group(0) if github_match else None
-
-        # Skill extraction
-        common_skills = [
-            "python", "javascript", "react", "node", "fastapi", "sql", "mongodb", "aws",
-            "docker", "git", "java", "c++", "c#", "html", "css", "typescript", "angular",
-            "vue", "kubernetes", "azure", "gcp", "linux", "django", "flask", "redis"
-        ]
-        extracted_skills = []
-        text_lower = raw_text.lower()
-        for skill in common_skills:
-            if re.search(r'\b' + re.escape(skill) + r'\b', text_lower):
-                extracted_skills.append(skill.capitalize())
-
-        return ParsedResumeData(
-            name=None,
-            email=email,
-            phone=phone,
-            linkedin=linkedin,
-            github=github,
-            skills=extracted_skills,
-            education=[],
-            experience=[],
-            projects=[],
-            certifications=[],
-            achievements=[]
-        )
-
     @classmethod
-    async def process_resume(cls, user_id: str, file_path: str, db) -> Tuple[ResumeUploadResponse, ResumeRecordInDB]:
-        """
-        Full pipeline: extract text -> parse with AI -> save to MongoDB -> merge skills.
-        """
+    async def process_resume(
+        cls,
+        user_id: str,
+        file_path: str,
+        db
+    ) -> Tuple[ResumeUploadResponse, ResumeRecordInDB]:
         raw_text = cls.extract_text_from_file(file_path)
+        if not raw_text.strip():
+            logger.warning(f"Extracted empty text from {file_path}")
+
         parsed_data, parsing_method = await cls.analyze_resume_with_ai(raw_text)
 
         # Merge extracted skills with existing user profile skills
@@ -191,25 +170,32 @@ Resume Text:
             updated_skills = list(set(existing_skills + parsed_data.skills))
             await db.profiles.update_one(
                 {"user_id": user_id},
-                {"$set": {"skills": updated_skills, "updated_at": datetime.utcnow()}}
+                {"$set": {"skills": updated_skills, "updated_at": datetime.now(timezone.utc)}}
             )
 
         # Save structured resume record to database
         record = ResumeRecordInDB(
             user_id=user_id,
             file_url=file_path,
-            uploaded_at=datetime.utcnow(),
+            uploaded_at=datetime.now(timezone.utc),
             parsed_data=parsed_data,
             parsing_method=parsing_method
         )
         record_dict = record.model_dump()
         result = await db.resumes.insert_one(record_dict)
-        record.id = str(result.inserted_id)
 
-        response = ResumeUploadResponse(
+        record_dict["id"] = str(result.inserted_id)
+
+        try:
+            await DigitalTwinMemoryService.update_memory(user_id, "resume", record_dict, db)
+        except Exception as memory_err:
+            logger.warning(f"[ResumeService] Memory update hook failed: {memory_err}")
+
+        resp = ResumeUploadResponse(
             message="Resume uploaded and analyzed successfully",
             file_url=file_path,
             extracted_skills=parsed_data.skills,
-            parsed_data=parsed_data
+            parsed_data=parsed_data,
+            generated_by=parsing_method
         )
-        return response, record
+        return resp, ResumeRecordInDB(**record_dict)

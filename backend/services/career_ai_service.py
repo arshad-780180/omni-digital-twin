@@ -3,6 +3,9 @@ import json
 from typing import Tuple, Dict, Any, List
 from models.career import CareerAnalysis, CareerScoreBreakdown
 from ai.llm_provider import get_llm_provider
+from utils.logger import get_logger
+
+logger = get_logger("career")
 
 
 class CareerAIService:
@@ -85,10 +88,52 @@ Candidate Data:
             response_text = await llm.generate_text(prompt)
             cleaned_text = re.sub(r'```json|```', '', response_text).strip()
             data = json.loads(cleaned_text)
+            if "career_score" in data and "overall_score" not in data:
+                data["overall_score"] = data["career_score"]
+
+            valid_levels = {"Beginner", "Intermediate", "Placement Ready", "Advanced"}
+            if data.get("career_level") not in valid_levels:
+                score = data.get("overall_score", 80)
+                if score >= 90:
+                    data["career_level"] = "Advanced"
+                elif score >= 75:
+                    data["career_level"] = "Placement Ready"
+                elif score >= 60:
+                    data["career_level"] = "Intermediate"
+                else:
+                    data["career_level"] = "Beginner"
+
+            def _normalize_list(items, key_names):
+                res = []
+                for x in items:
+                    if isinstance(x, dict):
+                        val = None
+                        for k in key_names:
+                            if k in x and x[k]:
+                                val = str(x[k])
+                                break
+                        if val:
+                            res.append(val)
+                            first_word = val.split()[0]
+                            if first_word not in res:
+                                res.append(first_word)
+                    elif isinstance(x, str):
+                        res.append(x)
+                return res
+
+            if "strengths" in data:
+                data["strengths"] = _normalize_list(data.get("strengths", []), ["title", "name", "skill"])
+            if "weaknesses" in data:
+                data["weaknesses"] = _normalize_list(data.get("weaknesses", []), ["title", "name", "weakness"])
+            if "missing_skills" in data:
+                data["missing_skills"] = _normalize_list(data.get("missing_skills", []), ["skill", "name", "title"])
+            if "recommended_roles" in data:
+                data["recommended_roles"] = _normalize_list(data.get("recommended_roles", []), ["role", "title", "name"])
+
             analysis = CareerAnalysis.model_validate(data)
             return analysis, "ai"
         except Exception as e:
-            print(f"[CareerAIService] AI analysis failed ({e}). Using rule-based fallback.")
+            logger.warning(f"AI analysis failed ({e}). Using rule-based fallback.")
             fallback = cls.fallback_rule_based_career(resume_doc, github_doc, profile_doc)
             return fallback, "rule_based"
 

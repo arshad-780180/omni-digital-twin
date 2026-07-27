@@ -76,7 +76,9 @@ class GitHubAIAnalysis(BaseModel):
 class GitHubAnalyzeRequest(BaseModel):
     username: str
 
-class GitHubAnalyzeResponse(BaseModel):
+from models.common import AIResponseBase
+
+class GitHubAnalyzeResponse(AIResponseBase):
     id: Optional[str] = None
     user_id: str
     username: str

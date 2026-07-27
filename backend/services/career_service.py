@@ -1,10 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Tuple
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 
 from models.career import CareerAnalyzeResponse
 from services.career_ai_service import CareerAIService
+from services.digital_twin_service import DigitalTwinService
+from services.digital_twin_memory_service import DigitalTwinMemoryService
+from utils.logger import get_logger
+
+logger = get_logger("career.service")
 
 
 class CareerService:
@@ -14,25 +19,11 @@ class CareerService:
         db: AsyncIOMotorDatabase
     ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """
-        Automatically retrieves latest Resume, GitHub analysis, and User Profile from MongoDB.
-        Never asks frontend to resend data.
+        Automatically retrieves latest Resume, GitHub analysis, and User Profile from MongoDB
+        via DigitalTwinService. Never asks frontend to resend data.
         """
-        # 1. Latest Resume from Phase 1
-        cursor_res = db.resumes.find({"user_id": user_id}).sort("created_at", -1).limit(1)
-        resumes = await cursor_res.to_list(length=1)
-        resume_doc = resumes[0] if resumes else None
-
-        # 2. Latest GitHub Analysis from Phase 2 (fallback to db.github_data if needed)
-        cursor_gh = db.github_analysis.find({"user_id": user_id}).sort("created_at", -1).limit(1)
-        gh_list = await cursor_gh.to_list(length=1)
-        github_doc = gh_list[0] if gh_list else None
-        if not github_doc:
-            github_doc = await db.github_data.find_one({"user_id": user_id})
-
-        # 3. Latest Profile from db.profiles
-        profile_doc = await db.profiles.find_one({"user_id": user_id})
-
-        return resume_doc, github_doc, profile_doc
+        context = await DigitalTwinService.get_context(user_id, db)
+        return context.get("resume"), context.get("github_analysis"), context.get("profile")
 
     @classmethod
     async def generate_career_readiness_report(
@@ -53,7 +44,7 @@ class CareerService:
             profile_doc or {}
         )
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         doc = {
             "user_id": user_id,
             "career_score": analysis.overall_score,
@@ -74,6 +65,11 @@ class CareerService:
 
         res = await db.career_analysis.insert_one(doc)
         doc["id"] = str(res.inserted_id)
+
+        try:
+            await DigitalTwinMemoryService.update_memory(user_id, "career", doc, db)
+        except Exception as memory_err:
+            logger.warning(f"[CareerService] Memory update hook failed: {memory_err}")
 
         return CareerAnalyzeResponse(**doc)
 

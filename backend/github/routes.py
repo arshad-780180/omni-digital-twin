@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
 from typing import Dict, List
 
@@ -16,14 +16,22 @@ from models.github import (
 )
 from services.github_service import GitHubService
 from services.github_ai_service import GitHubAIService
+from services.digital_twin_memory_service import DigitalTwinMemoryService
 from auth.routes import get_current_user
+from utils.logger import get_logger
 
+logger = get_logger("github.routes")
 router = APIRouter(prefix="/github", tags=["github"])
 
 class GitHubSyncRequest(BaseModel):
     username: str
 
-@router.post("/sync", response_model=GitHubDataResponse)
+@router.post(
+    "/sync",
+    response_model=GitHubDataResponse,
+    summary="Sync legacy GitHub data",
+    description="Syncs basic GitHub repository counts and languages for backward compatibility."
+)
 async def sync_github(request: GitHubSyncRequest, current_user: UserInDB = Depends(get_current_user), db: AsyncIOMotorDatabase = Depends(get_db)):
     username = request.username
     
@@ -65,7 +73,7 @@ async def sync_github(request: GitHubSyncRequest, current_user: UserInDB = Depen
         "total_commits": total_commits,
         "top_languages": sorted_languages[:10],
         "total_repos": total_repos,
-        "last_synced_at": datetime.utcnow()
+        "last_synced_at": datetime.now(timezone.utc)
     }
     
     await db.github_data.update_one(
@@ -76,10 +84,14 @@ async def sync_github(request: GitHubSyncRequest, current_user: UserInDB = Depen
     
     doc = await db.github_data.find_one({"user_id": current_user.id})
     doc["id"] = str(doc.pop("_id"))
-    
     return GitHubDataResponse(**doc)
 
-@router.get("/report", response_model=GitHubDataResponse)
+@router.get(
+    "/report",
+    response_model=GitHubDataResponse,
+    summary="Get legacy GitHub report",
+    description="Retrieves legacy synced GitHub repository statistics."
+)
 async def get_github_report(current_user: UserInDB = Depends(get_current_user), db: AsyncIOMotorDatabase = Depends(get_db)):
     doc = await db.github_data.find_one({"user_id": current_user.id})
     if not doc:
@@ -92,7 +104,12 @@ async def get_github_report(current_user: UserInDB = Depends(get_current_user), 
 # Phase 2: AI GitHub Intelligence Engine Endpoints
 # =========================================================
 
-@router.post("/analyze", response_model=GitHubAnalyzeResponse)
+@router.post(
+    "/analyze",
+    response_model=GitHubAnalyzeResponse,
+    summary="Analyze GitHub profile with AI",
+    description="Fetches full GitHub profile and repositories, generates an AI engineering evaluation, and stores structured results in MongoDB."
+)
 async def analyze_github_profile(
     request: GitHubAnalyzeRequest,
     current_user: UserInDB = Depends(get_current_user),
@@ -109,12 +126,17 @@ async def analyze_github_profile(
         profile=profile,
         repositories=repos,
         analysis=analysis,
-        analyzed_at=datetime.utcnow(),
+        analyzed_at=datetime.now(timezone.utc),
         parsing_method=method
     )
     record_dict = record.model_dump()
     result = await db.github_analysis.insert_one(record_dict)
     record.id = str(result.inserted_id)
+
+    try:
+        await DigitalTwinMemoryService.update_memory(current_user.id, "github", record_dict, db)
+    except Exception as memory_err:
+        logger.warning(f"[GitHubRoutes] Memory update hook failed: {memory_err}")
 
     # Also keep legacy github_data updated for backward compatibility
     language_counts: Dict[str, int] = {}
@@ -132,7 +154,7 @@ async def analyze_github_profile(
         "total_commits": profile.public_repos * 5,
         "top_languages": sorted_languages[:10],
         "total_repos": profile.public_repos,
-        "last_synced_at": datetime.utcnow()
+        "last_synced_at": datetime.now(timezone.utc)
     }
     await db.github_data.update_one(
         {"user_id": current_user.id},
@@ -142,7 +164,12 @@ async def analyze_github_profile(
 
     return record
 
-@router.get("/latest", response_model=GitHubAnalyzeResponse)
+@router.get(
+    "/latest",
+    response_model=GitHubAnalyzeResponse,
+    summary="Get latest AI GitHub analysis",
+    description="Fetches the most recent comprehensive AI engineering analysis for the user's GitHub profile."
+)
 async def get_latest_github_analysis(
     current_user: UserInDB = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
@@ -155,7 +182,12 @@ async def get_latest_github_analysis(
     doc["id"] = str(doc.pop("_id"))
     return GitHubAnalyzeResponse(**doc)
 
-@router.get("/profile", response_model=GitHubProfileInfo)
+@router.get(
+    "/profile",
+    response_model=GitHubProfileInfo,
+    summary="Get analyzed GitHub profile info",
+    description="Retrieves developer metadata from the most recent GitHub AI analysis."
+)
 async def get_github_profile_info(
     current_user: UserInDB = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
@@ -166,7 +198,12 @@ async def get_github_profile_info(
         raise HTTPException(status_code=404, detail="No GitHub profile found. Please analyze a profile first.")
     return GitHubProfileInfo(**docs[0]["profile"])
 
-@router.get("/repos", response_model=List[RepositoryInfo])
+@router.get(
+    "/repos",
+    response_model=List[RepositoryInfo],
+    summary="Get analyzed GitHub repositories",
+    description="Retrieves list of repository information from the most recent GitHub AI analysis."
+)
 async def get_github_repositories(
     current_user: UserInDB = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)

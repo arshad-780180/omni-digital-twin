@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 
 # =========================================================
@@ -39,21 +39,26 @@ class CareerScoreBreakdown(BaseModel):
 class StrengthItem(BaseModel):
     title: str
     description: str = ""
+    category: Optional[str] = "Technical"
 
 class WeaknessItem(BaseModel):
     title: str
     description: str = ""
     recommendation: str = ""
+    impact: Optional[str] = "Medium"
 
 class MissingSkillItem(BaseModel):
     skill: str
     importance: str = "High"
     category: str = "General"
+    reason: Optional[str] = ""
+    priority: Optional[str] = "High"
 
 class RecommendedRole(BaseModel):
     role: str
     match_percentage: int = 80
     description: str = ""
+    reason: Optional[str] = ""
 
 class CareerSummary(BaseModel):
     executive_summary: str
@@ -63,13 +68,15 @@ class CareerAnalysis(BaseModel):
     overall_score: int = 80
     breakdown: CareerScoreBreakdown
     career_level: str = "Intermediate"  # Beginner | Intermediate | Placement Ready | Advanced
-    strengths: List[str] = Field(default_factory=list)
-    weaknesses: List[str] = Field(default_factory=list)
-    missing_skills: List[str] = Field(default_factory=list)
-    recommended_roles: List[str] = Field(default_factory=list)
+    strengths: List[Any] = Field(default_factory=list)
+    weaknesses: List[Any] = Field(default_factory=list)
+    missing_skills: List[Any] = Field(default_factory=list)
+    recommended_roles: List[Any] = Field(default_factory=list)
     summary: str = ""
 
-class CareerAnalyzeResponse(BaseModel):
+from models.common import AIResponseBase
+
+class CareerAnalyzeResponse(AIResponseBase):
     id: Optional[str] = None
     user_id: str
     career_score: int = 80
@@ -79,10 +86,9 @@ class CareerAnalyzeResponse(BaseModel):
     project_score: int = 80
     communication_score: int = 80
     career_level: str = "Intermediate"
-    strengths: List[str] = Field(default_factory=list)
-    weaknesses: List[str] = Field(default_factory=list)
-    missing_skills: List[str] = Field(default_factory=list)
-    recommended_roles: List[str] = Field(default_factory=list)
+    strengths: List[Any] = Field(default_factory=list)
+    weaknesses: List[Any] = Field(default_factory=list)
+    missing_skills: List[Any] = Field(default_factory=list)
+    recommended_roles: List[Any] = Field(default_factory=list)
     summary: str = ""
     analysis_method: str = "ai"  # "ai" | "rule_based"
-    created_at: datetime

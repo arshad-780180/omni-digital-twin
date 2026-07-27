@@ -1,6 +1,6 @@
 import re
 import json
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Any
 from models.github import (
     GitHubProfileInfo,
     RepositoryInfo,
@@ -9,6 +9,9 @@ from models.github import (
     GitHubAIAnalysis,
 )
 from ai.llm_provider import get_llm_provider
+from utils.logger import get_logger
+
+logger = get_logger("github")
 
 
 class GitHubAIService:
@@ -18,14 +21,13 @@ class GitHubAIService:
         user_id: str,
         profile: GitHubProfileInfo,
         repos: List[RepositoryInfo],
-        db
+        db: Optional[Any] = None
     ) -> Tuple[GitHubAIAnalysis, str]:
         """
-        Analyzes user's GitHub profile & repositories using Gemini AI.
-        Compares with user's resume skills from MongoDB db.profiles.
-        Returns (GitHubAIAnalysis, parsing_method).
+        Analyzes profile and repositories using Gemini AI, falling back to deterministic
+        rule-based analysis if AI is unavailable.
         """
-        # 1. Fetch user profile skills from database to compare with GitHub
+        # 1. Fetch user skills from Profile if database handle provided
         resume_skills: List[str] = []
         try:
             if db is not None:
@@ -33,64 +35,70 @@ class GitHubAIService:
                 if user_profile and "skills" in user_profile:
                     resume_skills = [str(s) for s in user_profile.get("skills", [])]
         except Exception as e:
-            print(f"[GitHubAIService] Could not fetch profile skills: {e}")
+            logger.warning(f"Could not fetch profile skills: {e}")
 
         # 2. Extract repository language breakdown
         repo_summaries = []
         languages_set = set()
-        for r in repos[:10]:
-            if r.language and r.language != "Other":
+        total_stars = 0
+        total_forks = 0
+        for r in repos:
+            total_stars += r.stargazers_count
+            total_forks += r.forks_count
+            if r.language:
                 languages_set.add(r.language)
             repo_summaries.append(
-                f"- {r.name} ({r.language}): {r.description or 'No description'} "
-                f"[{r.stargazers_count} stars, {r.forks_count} forks]"
+                f"- {r.name} (lang: {r.language or 'None'}, stars: {r.stargazers_count}, forks: {r.forks_count}, desc: {r.description or 'None'}, commits: {getattr(r, 'commits_count', 0)})"
             )
-
-        repo_text_block = "\n".join(repo_summaries) if repo_summaries else "No public repositories available."
+        
+        repos_text = "\n".join(repo_summaries[:20]) # Limit to 20 for prompt size
+        skills_text = ", ".join(resume_skills) if resume_skills else "None provided"
 
         prompt = f"""
-You are an expert AI Principal Engineer and Engineering Manager. Perform a comprehensive technical audit of the developer's GitHub portfolio below.
-Evaluate their developer maturity level, score their GitHub portfolio out of 100, analyze their repositories, compare their GitHub skills with their resume skills ({', '.join(resume_skills) if resume_skills else 'None listed'}), and provide career recommendations and a personalized learning roadmap.
-
-Return strictly a valid JSON object conforming to the schema below, with no markdown code fences or extra text.
+You are an expert Principal GitHub Technical Evaluator & Career Architect.
+Analyze the following GitHub developer profile, repository metrics, and compare against known resume skills.
+Return strictly a valid JSON object matching the exact schema below without markdown formatting or code fences.
 
 Schema:
 {{
-  "developer_level": "Junior | Mid-Level | Senior | Lead",
+  "developer_level": "Junior Developer | Mid-Level Developer | Senior Developer | Principal Engineer",
   "github_score": 75,
-  "strengths": ["Strength 1", "Strength 2", "Strength 3"],
-  "weaknesses": ["Growth area 1", "Growth area 2"],
-  "portfolio_review": "A detailed 3-4 sentence professional evaluation of their repositories, coding diversity, and impact.",
+  "strengths": ["Strength 1", "Strength 2"],
+  "weaknesses": ["Weakness 1", "Weakness 2"],
+  "portfolio_review": "Executive summary review of repositories and coding activity.",
   "repository_analysis": [
     {{
-      "name": "Repo name",
-      "summary": "1-2 sentence architectural summary",
+      "repo_name": "repository-name",
       "architecture_score": 80,
-      "quality_score": 85,
-      "technologies": ["Tech1", "Tech2"],
-      "strengths": ["Clean code", "Good docs"]
+      "code_quality_score": 85,
+      "documentation_score": 70,
+      "key_strengths": ["Clean structure"],
+      "improvement_areas": ["Add CI/CD pipeline"],
+      "summary": "Repository evaluation summary."
     }}
   ],
-  "career_recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"],
-  "missing_skills": ["Skill missing from GitHub compared to Resume or industry expectations"],
+  "career_recommendations": ["Recommendation 1", "Recommendation 2"],
+  "missing_skills": ["Skill 1 not shown in GitHub"],
   "personalized_roadmap": [
     {{
       "step_number": 1,
       "title": "Roadmap step title",
-      "description": "Actionable step description",
-      "recommended_resources": ["Resource 1", "Resource 2"]
+      "description": "Actionable task description",
+      "recommended_resources": ["Resource or documentation link"]
     }}
   ]
 }}
 
-GitHub Username: {profile.username}
-Public Repositories Count: {profile.public_repos}
-Followers: {profile.followers}
-Top Repositories:
-{repo_text_block}
-Resume Skills: {', '.join(resume_skills) if resume_skills else 'None listed'}
-"""
+Candidate Data:
+- Username: {profile.username}
+- Public Repositories: {profile.public_repos}
+- Total Stars Across Repos: {total_stars}
+- Followers: {profile.followers}
+- Profile Skills (from Resume/Profile): {skills_text}
 
+Repositories Sample:
+{repos_text}
+"""
         try:
             llm = get_llm_provider()
             response_text = await llm.generate_text(prompt)
@@ -99,7 +107,7 @@ Resume Skills: {', '.join(resume_skills) if resume_skills else 'None listed'}
             analysis = GitHubAIAnalysis.model_validate(data)
             return analysis, "ai"
         except Exception as e:
-            print(f"[GitHubAIService] AI analysis failed ({e}). Using rule-based fallback.")
+            logger.warning(f"AI analysis failed ({e}). Using rule-based fallback.")
             fallback = cls.fallback_rule_based_analysis(profile, repos, resume_skills)
             return fallback, "rule_based_fallback"
 

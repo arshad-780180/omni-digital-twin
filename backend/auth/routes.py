@@ -4,12 +4,14 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Annotated
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from database.connection import get_db
 from models.user import UserCreate, UserLogin, UserResponse, Token, TokenData, UserInDB
 from utils.security import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
+from utils.logger import get_logger
 
+logger = get_logger("auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -36,7 +38,13 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
     user["id"] = str(user["_id"])
     return UserInDB(**user)
 
-@router.post("/register", response_model=UserResponse)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user account",
+    description="Creates a new OMNI Digital Twin user with secure password hashing and initial timestamps."
+)
 async def register(user_in: UserCreate, db: AsyncIOMotorDatabase = Depends(get_db)):
     # Check if user already exists
     existing_user = await db.users.find_one({"email": user_in.email})
@@ -46,14 +54,19 @@ async def register(user_in: UserCreate, db: AsyncIOMotorDatabase = Depends(get_d
     # Create new user
     user_dict = user_in.model_dump()
     user_dict["password_hash"] = get_password_hash(user_dict.pop("password"))
-    user_dict["created_at"] = datetime.utcnow()
+    user_dict["created_at"] = datetime.now(timezone.utc)
     
     result = await db.users.insert_one(user_dict)
     
     user_dict["id"] = str(result.inserted_id)
     return UserResponse(**user_dict)
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login",
+    response_model=Token,
+    summary="User login token exchange",
+    description="Authenticates credentials and returns a signed OAuth2 JWT Bearer access token."
+)
 async def login(user_in: UserLogin, db: AsyncIOMotorDatabase = Depends(get_db)):
     user = await db.users.find_one({"email": user_in.email})
     if not user or not verify_password(user_in.password, user["password_hash"]):
@@ -69,8 +82,10 @@ async def login(user_in: UserLogin, db: AsyncIOMotorDatabase = Depends(get_db)):
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-@router.post("/logout")
+@router.post(
+    "/logout",
+    summary="User session logout",
+    description="Logs out the current session."
+)
 async def logout():
-    # In a stateless JWT setup, logout is typically handled client-side 
-    # by deleting the token. If blacklisting is needed, it can be added here.
     return {"message": "Successfully logged out"}
