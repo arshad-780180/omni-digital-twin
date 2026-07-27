@@ -1,3 +1,4 @@
+import os
 import logging
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -37,6 +38,29 @@ class UnauthorizedError(OmniException):
         super().__init__(message, status_code=status.HTTP_401_UNAUTHORIZED)
 
 
+def get_cors_headers(request: Request) -> dict:
+    """Helper to ensure CORS headers are present on exception responses."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    
+    allowed = [
+        "http://localhost:5173", "http://localhost:5174",
+        "http://127.0.0.1:5173", "http://127.0.0.1:5174",
+        "http://localhost:3000"
+    ]
+    env_origins = os.getenv("CORS_ORIGINS")
+    if env_origins:
+        allowed.extend([o.strip() for o in env_origins.split(",") if o.strip()])
+    
+    if origin in allowed:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+        }
+    return {}
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """
     Registers global centralized exception handlers on the FastAPI application.
@@ -47,7 +71,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.warning(f"OmniException [{exc.status_code}]: {exc.message} on {request.url.path}")
         return JSONResponse(
             status_code=exc.status_code,
-            content={"success": False, "error": exc.message, "path": request.url.path}
+            content={"success": False, "error": exc.message, "path": request.url.path},
+            headers=get_cors_headers(request)
         )
 
     @app.exception_handler(HTTPException)
@@ -55,7 +80,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.info(f"HTTPException [{exc.status_code}]: {exc.detail} on {request.url.path}")
         return JSONResponse(
             status_code=exc.status_code,
-            content={"success": False, "error": str(exc.detail), "path": request.url.path}
+            content={"success": False, "error": str(exc.detail), "path": request.url.path},
+            headers=get_cors_headers(request)
         )
 
     @app.exception_handler(Exception)
@@ -68,5 +94,6 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": "Internal Server Error",
                 "detail": str(exc),
                 "path": request.url.path
-            }
+            },
+            headers=get_cors_headers(request)
         )
