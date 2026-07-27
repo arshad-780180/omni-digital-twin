@@ -2,10 +2,15 @@ node_modules/
 dist/
 build/
 .env
+.env.*
 __pycache__/
 *.pyc
+.pytest_cache/
 venv/
 .venv/
 .idea/
 .vscode/
 .DS_Store
+backend/uploads/
+*.pdf
+*.docx

@@ -14,7 +14,7 @@ import {
   Briefcase,
   Code,
   FileText,
-  Github,
+  GitBranch,
   Compass,
   ArrowLeft,
 } from 'lucide-react';
@@ -85,7 +85,7 @@ export default function DigitalTwin() {
       case 'resume':
         return { bg: 'bg-blue-500/10 text-blue-400 border-blue-500/20', icon: FileText, label: 'Resume' };
       case 'github':
-        return { bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20', icon: Github, label: 'GitHub' };
+        return { bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20', icon: GitBranch, label: 'GitHub' };
       case 'career':
         return { bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', icon: Compass, label: 'Career' };
       case 'ats':

@@ -4,7 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+MONGODB_URL = os.getenv("MONGODB_URL")
+if not MONGODB_URL:
+    raise ValueError("MONGODB_URL environment variable is required (e.g., MongoDB Atlas connection string)")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "omnimind_db")
 
 client = AsyncIOMotorClient(MONGODB_URL)

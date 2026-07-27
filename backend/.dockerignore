@@ -1,0 +1,45 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# OMNI Digital Twin — Backend .dockerignore
+# Prevents secrets, dev artifacts, and large caches from entering the image
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Python virtual environment — never include in image
+.venv/
+venv/
+env/
+
+# Python cache / compiled bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Environment files — secrets must NEVER be baked into the image
+.env
+.env.*
+
+# Uploaded user files — these are runtime data, not source code
+uploads/
+
+# IDE / OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker itself
+Dockerfile
+.dockerignore

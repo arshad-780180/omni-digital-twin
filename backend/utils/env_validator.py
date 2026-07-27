@@ -43,10 +43,17 @@ def validate_environment(strict: bool = False) -> Dict[str, bool]:
             status[var] = True
 
     if missing_required:
-        msg = f"[EnvValidator] Missing critical environment variables: {', '.join(missing_required)}"
-        logger.error(msg)
+        msg = (
+            f"Missing required environment variable:\n"
+            f"{', '.join(missing_required)}\n\n"
+            f"Please configure backend/.env for local development\n"
+            f"or deployment environment variables for production."
+        )
+        logger.error(f"Startup validation failed:\n{msg}")
         if strict:
-            raise RuntimeError(msg)
+            import sys
+            print(f"\n{msg}\n", file=sys.stderr)
+            sys.exit(1)
 
     logger.info("[EnvValidator] Startup environment validation checked successfully.")
     return status

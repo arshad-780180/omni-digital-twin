@@ -1,0 +1,15 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# OMNI Digital Twin — Frontend .dockerignore
+# ──────────────────────────────────────────────────────────────────────────────
+
+node_modules
+dist
+build
+.env
+.env.*
+.DS_Store
+.git
+.vscode
+.idea
+Dockerfile
+.dockerignore

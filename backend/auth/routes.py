@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from database.connection import get_db
 from models.user import UserCreate, UserLogin, UserResponse, Token, TokenData, UserInDB
-from utils.security import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
+from utils.security import get_password_hash, verify_password, create_access_token, JWT_SECRET_KEY, ALGORITHM
 from utils.logger import get_logger
 
 logger = get_logger("auth")
@@ -22,7 +22,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: As
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("email")
         if email is None:
             raise credentials_exception

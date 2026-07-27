@@ -713,7 +713,7 @@ export default function LearningRoadmap() {
                       <thead>
                         <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400">
                           <th className="p-4">Target Role</th>
-                          <th className="p-4">Current -> Target</th>
+                          <th className="p-4">Current -&gt; Target</th>
                           <th className="p-4">Progress</th>
                           <th className="p-4">Created Date</th>
                           <th className="p-4 text-right">Actions</th>

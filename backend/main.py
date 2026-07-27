@@ -20,7 +20,7 @@ logger = get_logger("main")
 async def lifespan(app: FastAPI):
     # Startup validation and MongoDB index registration
     logger.info("Initializing OMNI Digital Twin Platform...")
-    validate_environment(strict=False)
+    validate_environment(strict=True)
     try:
         db = await get_db()
         await ensure_indexes(db)
@@ -48,6 +48,10 @@ origins = [
     "http://127.0.0.1:5174",
     "http://localhost:3000",
 ]
+
+env_origins = os.getenv("CORS_ORIGINS")
+if env_origins:
+    origins.extend([origin.strip() for origin in env_origins.split(",") if origin.strip()])
 
 app.add_middleware(
     CORSMiddleware,
