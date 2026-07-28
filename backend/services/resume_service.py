@@ -147,6 +147,8 @@ Resume Text:
             return parsed_data, "ai"
         except Exception as e:
             logger.warning(f"AI parsing failed ({str(e)}), falling back to regex: {str(e)}")
+            # include full exception details in logs for debugging
+            logger.exception("AI parser exception")
             fallback_data = cls.fallback_regex_parse(text)
             return fallback_data, "regex_fallback"
 
@@ -157,23 +159,33 @@ Resume Text:
         file_path: str,
         db
     ) -> Tuple[ResumeUploadResponse, ResumeRecordInDB]:
+        logger.info("Starting resume processing")
         raw_text = cls.extract_text_from_file(file_path)
+        logger.info("Text extraction completed")
+        logger.info(f"Extracted {len(raw_text)} characters")
         if not raw_text.strip():
             logger.warning(f"Extracted empty text from {file_path}")
 
         parsed_data, parsing_method = await cls.analyze_resume_with_ai(raw_text)
+        logger.info("Resume parsing completed")
+        logger.info(f"Parsing method: {parsing_method}")
 
         # Merge extracted skills with existing user profile skills
+        logger.info("Loading user profile")
         profile = await db.profiles.find_one({"user_id": user_id})
         if profile:
-            existing_skills = profile.get("skills", [])
-            updated_skills = list(set(existing_skills + parsed_data.skills))
+            logger.info("Updating skills")
+            existing_skills = profile.get("skills", []) or []
+            # ensure parsed_data.skills is a list
+            parsed_skills = parsed_data.skills or []
+            updated_skills = list(set(existing_skills + parsed_skills))
             await db.profiles.update_one(
                 {"user_id": user_id},
                 {"$set": {"skills": updated_skills, "updated_at": datetime.now(timezone.utc)}}
             )
 
         # Save structured resume record to database
+        logger.info("Creating ResumeRecordInDB")
         record = ResumeRecordInDB(
             user_id=user_id,
             file_url=file_path,
@@ -182,19 +194,27 @@ Resume Text:
             parsing_method=parsing_method
         )
         record_dict = record.model_dump()
-        result = await db.resumes.insert_one(record_dict)
+
+        logger.info("Inserting resume into MongoDB")
+        try:
+            result = await db.resumes.insert_one(record_dict)
+        except Exception as e:
+            logger.exception("Failed to insert resume into MongoDB")
+            raise
 
         record_dict["id"] = str(result.inserted_id)
 
+        logger.info("Updating Digital Twin memory")
         try:
             await DigitalTwinMemoryService.update_memory(user_id, "resume", record_dict, db)
-        except Exception as memory_err:
-            logger.warning(f"[ResumeService] Memory update hook failed: {memory_err}")
+        except Exception:
+            logger.exception("Memory update failed")
 
+        logger.info("Returning response")
         resp = ResumeUploadResponse(
             message="Resume uploaded and analyzed successfully",
             file_url=file_path,
-            extracted_skills=parsed_data.skills,
+            extracted_skills=parsed_data.skills or [],
             parsed_data=parsed_data,
             generated_by=parsing_method
         )

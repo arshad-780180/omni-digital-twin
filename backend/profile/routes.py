@@ -12,6 +12,7 @@ from models.resume import ResumeUploadResponse, ResumeRecordInDB
 from services.resume_service import ResumeService
 from auth.routes import get_current_user
 from utils.logger import get_logger
+import traceback
 
 logger = get_logger("profile")
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -68,7 +69,9 @@ async def upload_resume(file: UploadFile = File(...), current_user: UserInDB = D
         response, _ = await ResumeService.process_resume(current_user.id, file_location, db)
         return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process resume: {str(e)}")
+        logger.exception("Resume upload failed")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get(
     "/resume/latest",

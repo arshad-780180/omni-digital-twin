@@ -14,7 +14,7 @@ class GeminiProvider(LLMProvider):
             raise ValueError("GEMINI_API_KEY environment variable is not set")
         genai.configure(api_key=api_key)
         # Use gemini-1.5-flash as the default model for text tasks
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel("gemini-2.5-flash")
 
     async def generate_text(self, prompt: str) -> str:
         # Note: the python SDK for gemini has generate_content_async but generate_content is also fine if used correctly in async.
