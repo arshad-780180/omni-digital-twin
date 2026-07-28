@@ -1,27 +1,54 @@
 import os
 import google.generativeai as genai
 from abc import ABC, abstractmethod
+from utils.logger import get_logger
+
+logger = get_logger("llm_provider")
+
 
 class LLMProvider(ABC):
     @abstractmethod
-    async def generate_text(self, prompt: str) -> str:
+    async def generate_text(self, prompt: str, **kwargs) -> str:
         pass
+
 
 class GeminiProvider(LLMProvider):
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set")
-        genai.configure(api_key=api_key)
-        # Use gemini-1.5-flash as the default model for text tasks
-        self.model = genai.GenerativeModel("gemini-2.5-flash")
+            raise RuntimeError("GEMINI_API_KEY environment variable is not configured.")
 
-    async def generate_text(self, prompt: str) -> str:
-        # Note: the python SDK for gemini has generate_content_async but generate_content is also fine if used correctly in async.
-        # We will use generate_content_async.
-        response = await self.model.generate_content_async(prompt)
-        return response.text
+        model_name = os.getenv("GEMINI_MODEL")
+        if not model_name:
+            raise RuntimeError("GEMINI_MODEL environment variable is not configured.")
 
-# Factory function to easily swap out providers later
+        logger.info(f"Initializing GeminiProvider with model '{model_name}'")
+        try:
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel(model_name)
+            self.model_name = model_name
+            logger.info(f"GeminiProvider initialized successfully for model '{model_name}'")
+        except Exception as e:
+            logger.exception(f"Failed to initialize Gemini model '{model_name}'")
+            raise RuntimeError(
+                f"Failed to initialize Gemini model '{model_name}': {e}"
+            ) from e
+
+    async def generate_text(self, prompt: str, **kwargs) -> str:
+        try:
+            response = await self.model.generate_content_async(prompt, **kwargs)
+            return response.text
+        except Exception as e:
+            logger.exception("GeminiProvider.generate_text failed")
+            raise RuntimeError(f"Gemini text generation failed: {e}") from e
+
+
+_provider_singleton: LLMProvider | None = None
+
+
 def get_llm_provider() -> LLMProvider:
-    return GeminiProvider()
+    """Returns a singleton LLM provider configured from environment variables."""
+    global _provider_singleton
+    if _provider_singleton is None:
+        _provider_singleton = GeminiProvider()
+    return _provider_singleton

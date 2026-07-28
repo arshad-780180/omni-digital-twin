@@ -38,6 +38,7 @@ class ParsedResumeData(BaseModel):
     phone: Optional[str] = None
     linkedin: Optional[str] = None
     github: Optional[str] = None
+    summary: Optional[str] = None
     education: List[EducationItem] = Field(default_factory=list)
     experience: List[ExperienceItem] = Field(default_factory=list)
     skills: List[str] = Field(default_factory=list)
