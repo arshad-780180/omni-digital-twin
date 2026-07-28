@@ -16,3 +16,4 @@ python-docx
 pytest
 pytest-asyncio
 reportlab
+certifi==2024.7.4
