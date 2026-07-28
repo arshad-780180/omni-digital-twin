@@ -7,7 +7,7 @@ pydantic[email]==2.6.1
 pydantic-settings==2.1.0
 pyjwt==2.8.0
 
-passlib[bcrypt]==1.7.4
+# Use bcrypt directly; passlib removed because of compatibility issues with bcrypt 4.x
 bcrypt==4.1.3
 
 python-multipart

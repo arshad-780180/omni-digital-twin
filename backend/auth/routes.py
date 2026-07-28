@@ -53,7 +53,10 @@ async def register(user_in: UserCreate, db: AsyncIOMotorDatabase = Depends(get_d
         
     # Create new user
     user_dict = user_in.model_dump()
-    user_dict["password_hash"] = get_password_hash(user_dict.pop("password"))
+    try:
+        user_dict["password_hash"] = get_password_hash(user_dict.pop("password"))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     user_dict["created_at"] = datetime.now(timezone.utc)
     
     result = await db.users.insert_one(user_dict)
@@ -69,7 +72,18 @@ async def register(user_in: UserCreate, db: AsyncIOMotorDatabase = Depends(get_d
 )
 async def login(user_in: UserLogin, db: AsyncIOMotorDatabase = Depends(get_db)):
     user = await db.users.find_one({"email": user_in.email})
-    if not user or not verify_password(user_in.password, user["password_hash"]):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        valid = verify_password(user_in.password, user["password_hash"])
+    except ValueError as e:
+        # Invalid password (e.g. too long) -> return 400
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
